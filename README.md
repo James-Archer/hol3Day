@@ -1,0 +1,40 @@
+# 3D Photo Viewer
+
+Static WebXR site for viewing series-shot photos as stereo 3D pairs on Meta Quest 3, using the [`stereo-img`](https://github.com/steren/stereo-img) web component.
+
+## Adding photos
+
+Each "scene" is a folder of photos taken from a horizontal sweep of the same subject:
+
+```
+photos/
+  <scene-name>/
+    01.jpg
+    02.jpg
+    03.jpg
+    ...
+```
+
+Filenames just need to sort in shooting order (e.g. `01.jpg`, `02.jpg`, ...).
+
+## How viewing works
+
+Pick a scene, then use the controls to choose which two photos become the left/right eye pair:
+
+- **Shift ◀ / Shift ▶** — move both photos forward/back together, keeping the same gap (`1&2 → 2&3`).
+- **Contract − / Expand +** — narrow or widen the gap between the two photos (`1&2 → 1&3`), which changes the apparent 3D depth/parallax.
+
+The `stereo-img` component adds its own "Enter VR" button for immersive viewing in the Meta Quest Browser.
+
+## Local testing
+
+```bash
+npm run build:manifest   # scans photos/ and writes manifest.json
+npx http-server .        # or any static file server
+```
+
+Open the printed URL in a desktop browser to check the scene picker and controls. Full VR (`Enter VR` button on a Quest) requires a secure context, so test that part against the deployed GitHub Pages URL rather than a local plain-HTTP server.
+
+## Deployment
+
+A GitHub Actions workflow (`.github/workflows/deploy.yml`) regenerates `manifest.json` and deploys the site on every push to `main`. One-time setup: in the repo's **Settings → Pages**, set **Source** to **GitHub Actions**.

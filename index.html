@@ -10,21 +10,23 @@
 <body>
   <header>
     <h1>3D Photo Viewer</h1>
-    <label for="scene-select">Scene</label>
-    <select id="scene-select"></select>
+    <label for="library-select">Library</label>
+    <select id="library-select"></select>
   </header>
 
   <main>
-    <p id="empty-state" hidden>This scene needs at least two photos to form a stereo pair.</p>
+    <p id="empty-state" hidden>This set needs at least two photos to form a stereo pair.</p>
 
     <stereo-img id="viewer" type="pair" hidden></stereo-img>
 
     <div id="controls" hidden>
       <div class="control-row">
+        <button id="prev-set" title="Switch to the previous set of photos">&#9664; Set</button>
         <button id="shift-back" title="Move both photos back one">&#9664; Shift</button>
         <button id="contract" title="Narrow the gap between photos">&minus; Contract</button>
         <button id="expand" title="Widen the gap between photos">+ Expand</button>
         <button id="shift-forward" title="Move both photos forward one">Shift &#9654;</button>
+        <button id="next-set" title="Switch to the next set of photos">Set &#9654;</button>
       </div>
       <p id="status"></p>
     </div>

@@ -4,23 +4,26 @@ Static WebXR site for viewing series-shot photos as stereo 3D pairs on Meta Ques
 
 ## Adding photos
 
-Each "scene" is a folder of photos taken from a horizontal sweep of the same subject:
+Photos are organized into libraries, each containing one or more sets. A "set" is a
+folder of photos taken from a horizontal sweep of the same subject:
 
 ```
 photos/
-  <scene-name>/
-    01.jpg
-    02.jpg
-    03.jpg
-    ...
+  <library-name>/
+    <set-name>/
+      01.jpg
+      02.jpg
+      03.jpg
+      ...
 ```
 
 Filenames just need to sort in shooting order (e.g. `01.jpg`, `02.jpg`, ...).
 
 ## How viewing works
 
-Pick a scene, then use the controls to choose which two photos become the left/right eye pair:
+Pick a library, then use the controls to navigate:
 
+- **◀ Set / Set ▶** — switch to the previous/next set within the library.
 - **Shift ◀ / Shift ▶** — move both photos forward/back together, keeping the same gap (`1&2 → 2&3`).
 - **Contract − / Expand +** — narrow or widen the gap between the two photos (`1&2 → 1&3`), which changes the apparent 3D depth/parallax.
 

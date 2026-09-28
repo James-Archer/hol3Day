@@ -1,10 +1,14 @@
-// Scans photos/<scene>/* and writes manifest.json describing each scene's sorted image list.
+// Scans photos/<library>/<set>/* and writes manifest.json describing each library's sets and sorted image lists.
 import { readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const PHOTOS_DIR = 'photos';
 const OUTPUT_FILE = 'manifest.json';
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+
+function subDirs(dir) {
+  return readdirSync(dir).filter((name) => statSync(join(dir, name)).isDirectory());
+}
 
 function isImage(filename) {
   const ext = filename.slice(filename.lastIndexOf('.')).toLowerCase();
@@ -16,29 +20,34 @@ function humanize(id) {
 }
 
 function buildManifest() {
-  let sceneDirs = [];
+  let libraryDirs = [];
   try {
-    sceneDirs = readdirSync(PHOTOS_DIR).filter((name) =>
-      statSync(join(PHOTOS_DIR, name)).isDirectory()
-    );
+    libraryDirs = subDirs(PHOTOS_DIR);
   } catch {
     // photos/ doesn't exist yet - emit an empty manifest.
-    return { scenes: [] };
+    return { libraries: [] };
   }
 
-  const scenes = sceneDirs
+  const libraries = libraryDirs
     .sort((a, b) => a.localeCompare(b))
-    .map((id) => {
-      const images = readdirSync(join(PHOTOS_DIR, id))
-        .filter(isImage)
-        .sort((a, b) => a.localeCompare(b));
-      return { id, name: humanize(id), images };
+    .map((libraryId) => {
+      const libraryPath = join(PHOTOS_DIR, libraryId);
+      const sets = subDirs(libraryPath)
+        .sort((a, b) => a.localeCompare(b))
+        .map((setId) => {
+          const images = readdirSync(join(libraryPath, setId))
+            .filter(isImage)
+            .sort((a, b) => a.localeCompare(b));
+          return { id: setId, name: humanize(setId), images };
+        })
+        .filter((set) => set.images.length > 0);
+      return { id: libraryId, name: humanize(libraryId), sets };
     })
-    .filter((scene) => scene.images.length > 0);
+    .filter((library) => library.sets.length > 0);
 
-  return { scenes };
+  return { libraries };
 }
 
 const manifest = buildManifest();
 writeFileSync(OUTPUT_FILE, JSON.stringify(manifest, null, 2) + '\n');
-console.log(`Wrote ${OUTPUT_FILE}: ${manifest.scenes.length} scene(s).`);
+console.log(`Wrote ${OUTPUT_FILE}: ${manifest.libraries.length} librar(y/ies).`);

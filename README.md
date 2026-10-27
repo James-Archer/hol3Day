@@ -29,6 +29,14 @@ Pick a library, then use the controls to navigate:
 
 The `stereo-img` component adds its own "Enter VR" button for immersive viewing in the Meta Quest Browser.
 
+## Controls while in VR
+
+Once immersive, the page's HTML buttons aren't rendered to the headset, so navigation switches to the controllers:
+
+- **Left trigger / Right trigger** — shift the pair back/forward (same as Shift ◀ / Shift ▶).
+- **Left squeeze / Right squeeze** — switch to the previous/next set (same as ◀ Set / Set ▶).
+- **Squeeze both grips at once** — exit VR (the "Exit VR" button is hidden too, so this is the only way back to 2D from inside the headset).
+
 ## Local testing
 
 ```bash

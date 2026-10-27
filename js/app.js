@@ -174,44 +174,103 @@ function render() {
     `photos ${left + 1} & ${right + 1} of ${images.length} (gap: ${right - left})`;
 }
 
-prevSetBtn.addEventListener('click', () => {
+function prevSet() {
   if (setIndex === 0) return;
   setIndex -= 1;
   resetPair();
   render();
-});
+}
 
-nextSetBtn.addEventListener('click', () => {
+function nextSet() {
   if (setIndex === currentLibrary().sets.length - 1) return;
   setIndex += 1;
   resetPair();
   render();
-});
+}
 
-shiftBackBtn.addEventListener('click', () => {
+function shiftBack() {
   if (left === 0) return;
   left -= 1;
   right -= 1;
   render();
-});
+}
 
-shiftForwardBtn.addEventListener('click', () => {
+function shiftForward() {
   const images = currentSet().images;
   if (right === images.length - 1) return;
   left += 1;
   right += 1;
   render();
-});
+}
 
-expandBtn.addEventListener('click', () => {
+function expandGap() {
   const images = currentSet().images;
   if (right === images.length - 1) return;
   right += 1;
   render();
-});
+}
 
-contractBtn.addEventListener('click', () => {
+function contractGap() {
   if (right === left + 1) return;
   right -= 1;
   render();
-});
+}
+
+prevSetBtn.addEventListener('click', prevSet);
+nextSetBtn.addEventListener('click', nextSet);
+shiftBackBtn.addEventListener('click', shiftBack);
+shiftForwardBtn.addEventListener('click', shiftForward);
+expandBtn.addEventListener('click', expandGap);
+contractBtn.addEventListener('click', contractGap);
+
+// The headset renders stereo-img's canvas exclusively once immersive, so our page
+// buttons become invisible - map controller triggers to the same actions instead.
+function hookVRControls() {
+  if (!viewer.renderer) {
+    requestAnimationFrame(hookVRControls);
+    return;
+  }
+
+  const squeezeHeld = { left: false, right: false };
+  let comboTriggered = false;
+
+  viewer.renderer.xr.addEventListener('sessionstart', () => {
+    const session = viewer.renderer.xr.getSession();
+    squeezeHeld.left = false;
+    squeezeHeld.right = false;
+    comboTriggered = false;
+
+    session.addEventListener('selectstart', (event) => {
+      if (libraries.length === 0) return;
+      if (event.inputSource.handedness === 'left') shiftBack();
+      else if (event.inputSource.handedness === 'right') shiftForward();
+    });
+
+    session.addEventListener('squeezestart', (event) => {
+      const hand = event.inputSource.handedness;
+      if (hand !== 'left' && hand !== 'right') return;
+      squeezeHeld[hand] = true;
+      // Squeezing both grips at once exits VR - the only way back to 2D
+      // since the "Exit VR" button is also hidden during the session.
+      if (squeezeHeld.left && squeezeHeld.right) {
+        comboTriggered = true;
+        session.end();
+      }
+    });
+
+    session.addEventListener('squeezeend', (event) => {
+      const hand = event.inputSource.handedness;
+      if (hand !== 'left' && hand !== 'right') return;
+      squeezeHeld[hand] = false;
+      if (comboTriggered) {
+        if (!squeezeHeld.left && !squeezeHeld.right) comboTriggered = false;
+        return;
+      }
+      if (libraries.length === 0) return;
+      if (hand === 'left') prevSet();
+      else nextSet();
+    });
+  });
+}
+
+hookVRControls();

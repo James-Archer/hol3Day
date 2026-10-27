@@ -17,6 +17,17 @@ let setIndex = 0;
 let left = 0;
 let right = 1;
 
+// Large photos can take a while to fetch/decode, and the stereo-img component
+// has no way to report success/failure - so we validate loads ourselves and
+// block overlapping navigation that was observed to leave it stuck mid-render.
+const LOAD_TIMEOUT_MS = 25000;
+let busy = false;
+let loadToken = 0;
+// File -> Blob, read once per file. stereo-img revokes every object URL it's
+// given as soon as it finishes decoding it, so a fresh URL must be minted from
+// this Blob on every display - reusing a URL across navigations always fails.
+let fileBlobCache = new Map();
+
 folderPicker.addEventListener('change', (event) => {
   const files = Array.from(event.target.files);
   
@@ -48,10 +59,12 @@ folderPicker.addEventListener('change', (event) => {
     }
     const set = lib.sets.get(setName);
 
-    // Generate a local browser URL for this specific file
+    // Keep the File reference only - creating object URLs for every photo in
+    // every set up front exceeded the browser's blob storage on large folders
+    // and caused intermittent ERR_FILE_NOT_FOUND. URLs are created lazily instead.
     set.images.push({
       name: filename,
-      url: URL.createObjectURL(file) 
+      file
     });
   }
 
@@ -81,13 +94,19 @@ folderPicker.addEventListener('change', (event) => {
 });
 
 function cleanupObjectUrls() {
-  libraries.forEach(lib => {
-    lib.sets.forEach(set => {
-      set.images.forEach(img => {
-        URL.revokeObjectURL(img.url);
-      });
-    });
-  });
+  fileBlobCache.clear();
+}
+
+// Reads a file's bytes into memory once (cached), but always mints a brand new
+// object URL from the cached Blob - see fileBlobCache comment for why.
+async function urlForFile(file) {
+  let blob = fileBlobCache.get(file);
+  if (!blob) {
+    const buffer = await file.arrayBuffer();
+    blob = new Blob([buffer], { type: file.type });
+    fileBlobCache.set(file, blob);
+  }
+  return URL.createObjectURL(blob);
 }
 
 function populateLibrarySelect() {
@@ -136,10 +155,126 @@ function resetPair() {
   right = currentSet().images.length > 1 ? 1 : 0;
 }
 
+// stereo-img reads each blob URL itself (EXIF probe, then pixel decode) - an extra
+// fetch() of ours beforehand was found to make that second internal read fail
+// intermittently, so we no longer pre-validate and rely on the timeout below instead.
+
+function timeout(ms, message) {
+  return new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms));
+}
+
+// stereo-img replaces its THREE.js group on every src change but never disposes
+// the old geometry/textures, leaking GPU memory that eventually makes new,
+// large photos fail to decode - free the previous pair's resources ourselves.
+// Must only be called on a group that's already been detached from the scene -
+// disposing the live group while it's still rendering spams "no image data" warnings.
+function disposeStereoResources(group) {
+  if (!group || typeof group.traverse !== 'function') return;
+  try {
+    group.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+      for (const material of materials) {
+        if (!material) continue;
+        if (material.map) {
+          material.map.dispose();
+          material.map.image = null;
+        }
+        if (material.displacementMap) {
+          material.displacementMap.dispose();
+          material.displacementMap.image = null;
+        }
+        material.dispose();
+      }
+    });
+  } catch (err) {
+    console.warn('Could not dispose previous stereo image resources:', err);
+  }
+}
+
+// Waits for the viewer's internal loading indicator to go true then false,
+// rather than trusting a single read, since it may not have flipped on yet.
+function waitForViewerReady(token) {
+  return new Promise((resolve, reject) => {
+    const deadline = Date.now() + LOAD_TIMEOUT_MS;
+    let sawLoading = false;
+    (function poll() {
+      if (token !== loadToken) return resolve();
+      const loading = Boolean(viewer.loadingIndicator && viewer.loadingIndicator.visible);
+      if (loading) sawLoading = true;
+      if (sawLoading && !loading) return resolve();
+      if (Date.now() > deadline) return reject(new Error('Timed out waiting for the viewer to finish loading.'));
+      requestAnimationFrame(poll);
+    })();
+  });
+}
+
+async function loadPair(leftFile, rightFile) {
+  const token = ++loadToken;
+  busy = true;
+  updateNavDisabled();
+  statusEl.textContent = 'Loading photos…';
+  // Captured now, disposed only once the new group below confirms it's detached.
+  const previousGroup = viewer.stereoImageGroup;
+  let leftUrl;
+  let rightUrl;
+
+  try {
+    [leftUrl, rightUrl] = await Promise.all([urlForFile(leftFile), urlForFile(rightFile)]);
+    if (token !== loadToken) return;
+
+    viewer.src = leftUrl;
+    viewer.setAttribute('src-right', rightUrl);
+
+    await Promise.race([
+      waitForViewerReady(token),
+      timeout(LOAD_TIMEOUT_MS, 'Timed out loading photos.'),
+    ]);
+    if (token !== loadToken) return;
+
+    disposeStereoResources(previousGroup);
+    updateStatusText();
+  } catch (err) {
+    if (token !== loadToken) return;
+    console.error('Failed to display stereo pair:', err);
+    statusEl.textContent = 'Could not load this photo pair (see console for details). Try again.';
+  } finally {
+    // stereo-img already revokes these itself on success; revoking an
+    // already-revoked URL is a harmless no-op, so this just covers error paths.
+    if (leftUrl) URL.revokeObjectURL(leftUrl);
+    if (rightUrl) URL.revokeObjectURL(rightUrl);
+    if (token === loadToken) {
+      busy = false;
+      updateNavDisabled();
+    }
+  }
+}
+
+function updateNavDisabled() {
+  if (libraries.length === 0) return;
+  const library = currentLibrary();
+  const set = currentSet();
+  const images = set.images;
+  prevSetBtn.disabled = busy || setIndex === 0;
+  nextSetBtn.disabled = busy || setIndex === library.sets.length - 1;
+  shiftBackBtn.disabled = busy || left === 0;
+  shiftForwardBtn.disabled = busy || right === images.length - 1;
+  expandBtn.disabled = busy || right === images.length - 1;
+  contractBtn.disabled = busy || right === left + 1;
+}
+
+function updateStatusText() {
+  const library = currentLibrary();
+  const set = currentSet();
+  const images = set.images;
+  statusEl.textContent =
+    `Set "${set.name}" (${setIndex + 1} of ${library.sets.length}) — ` +
+    `photos ${left + 1} & ${right + 1} of ${images.length} (gap: ${right - left})`;
+}
+
 function render() {
   if (libraries.length === 0) return;
 
-  const library = currentLibrary();
   const set = currentSet();
   const images = set.images;
 
@@ -156,40 +291,26 @@ function render() {
   viewer.hidden = false;
   controls.hidden = false;
 
-  // Apply the local Object URLs directly to the viewer
-  viewer.src = images[left].url;
-  viewer.setAttribute('src-right', images[right].url);
-
-  // Update button states based on array bounds
-  prevSetBtn.disabled = setIndex === 0;
-  nextSetBtn.disabled = setIndex === library.sets.length - 1;
-  shiftBackBtn.disabled = left === 0;
-  shiftForwardBtn.disabled = right === images.length - 1;
-  expandBtn.disabled = right === images.length - 1;
-  contractBtn.disabled = right === left + 1;
-
-  // Update status text
-  statusEl.textContent = 
-    `Set "${set.name}" (${setIndex + 1} of ${library.sets.length}) — ` +
-    `photos ${left + 1} & ${right + 1} of ${images.length} (gap: ${right - left})`;
+  updateNavDisabled();
+  loadPair(images[left].file, images[right].file);
 }
 
 function prevSet() {
-  if (setIndex === 0) return;
+  if (busy || setIndex === 0) return;
   setIndex -= 1;
   resetPair();
   render();
 }
 
 function nextSet() {
-  if (setIndex === currentLibrary().sets.length - 1) return;
+  if (busy || setIndex === currentLibrary().sets.length - 1) return;
   setIndex += 1;
   resetPair();
   render();
 }
 
 function shiftBack() {
-  if (left === 0) return;
+  if (busy || left === 0) return;
   left -= 1;
   right -= 1;
   render();
@@ -197,7 +318,7 @@ function shiftBack() {
 
 function shiftForward() {
   const images = currentSet().images;
-  if (right === images.length - 1) return;
+  if (busy || right === images.length - 1) return;
   left += 1;
   right += 1;
   render();
@@ -205,13 +326,13 @@ function shiftForward() {
 
 function expandGap() {
   const images = currentSet().images;
-  if (right === images.length - 1) return;
+  if (busy || right === images.length - 1) return;
   right += 1;
   render();
 }
 
 function contractGap() {
-  if (right === left + 1) return;
+  if (busy || right === left + 1) return;
   right -= 1;
   render();
 }

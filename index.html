@@ -4,19 +4,30 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>3D Photo Viewer</title>
-  <link rel="stylesheet" href="css/style.css">
+  <!-- Import the stereo-img web component for WebXR viewing -->
   <script type="module" src="https://unpkg.com/stereo-img"></script>
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <header>
     <h1>3D Photo Viewer</h1>
-    <label for="library-select">Library</label>
-    <select id="library-select"></select>
+    
+    <div class="file-picker-container">
+      <label for="folderPicker">Select Folder:</label>
+      <!-- webkitdirectory allows users to pick a local folder containing all their sets -->
+      <input type="file" id="folderPicker" webkitdirectory directory multiple accept="image/*">
+    </div>
+
+    <label for="library-select">Library:</label>
+    <select id="library-select" disabled>
+      <option value="">Load a folder first...</option>
+    </select>
   </header>
 
   <main>
-    <p id="empty-state" hidden>This set needs at least two photos to form a stereo pair.</p>
+    <p id="empty-state">Select a local folder containing your images to begin.<br>Images will be grouped into libraries and sets based on their folder structure.</p>
 
+    <!-- The WebXR viewer element -->
     <stereo-img id="viewer" type="pair" hidden></stereo-img>
 
     <div id="controls" hidden>
